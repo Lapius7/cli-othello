@@ -7,28 +7,45 @@ import curses
 from .ai import LEVEL_LABELS, MAX_LEVEL, MIN_LEVEL, OthelloAI
 from .board import BLACK, EMPTY, SIZE, WHITE, Board, opponent
 
-DISC_CHARS = {EMPTY: " ", BLACK: "●", WHITE: "○"}
 PLAYER_NAMES = {BLACK: "黒", WHITE: "白"}
+
+# Each cell is rendered as CELL_W columns x CELL_H rows so it reads as
+# roughly square in a terminal (chars are about twice as tall as wide).
+CELL_W = 5
+CELL_H = 2
+
+DISC_BLACK = "●"
+DISC_WHITE = "○"
+HINT_MARK = "+"
 
 COLOR_BOARD = 1
 COLOR_BLACK = 2
 COLOR_WHITE = 3
-COLOR_CURSOR = 4
-COLOR_HINT = 5
-COLOR_HEADER = 6
-COLOR_STATUS = 7
+COLOR_CURSOR_EMPTY = 4
+COLOR_CURSOR_BLACK = 5
+COLOR_CURSOR_WHITE = 6
+COLOR_HINT = 7
+COLOR_HEADER = 8
+COLOR_STATUS = 9
+COLOR_PANEL = 10
+COLOR_GRID = 11
 
 
 def init_colors() -> None:
     curses.start_color()
     curses.use_default_colors()
-    curses.init_pair(COLOR_BOARD, curses.COLOR_WHITE, curses.COLOR_GREEN)
-    curses.init_pair(COLOR_BLACK, curses.COLOR_BLACK, curses.COLOR_GREEN)
-    curses.init_pair(COLOR_WHITE, curses.COLOR_WHITE, curses.COLOR_GREEN)
-    curses.init_pair(COLOR_CURSOR, curses.COLOR_BLACK, curses.COLOR_YELLOW)
-    curses.init_pair(COLOR_HINT, curses.COLOR_GREEN, curses.COLOR_BLACK)
+    curses.init_pair(COLOR_BOARD, curses.COLOR_GREEN, curses.COLOR_GREEN)
+    # Discs fill the whole cell with their own color for maximum visibility.
+    curses.init_pair(COLOR_BLACK, curses.COLOR_WHITE, curses.COLOR_BLACK)
+    curses.init_pair(COLOR_WHITE, curses.COLOR_BLACK, curses.COLOR_WHITE)
+    curses.init_pair(COLOR_CURSOR_EMPTY, curses.COLOR_BLACK, curses.COLOR_YELLOW)
+    curses.init_pair(COLOR_CURSOR_BLACK, curses.COLOR_YELLOW, curses.COLOR_BLACK)
+    curses.init_pair(COLOR_CURSOR_WHITE, curses.COLOR_YELLOW, curses.COLOR_WHITE)
+    curses.init_pair(COLOR_HINT, curses.COLOR_YELLOW, curses.COLOR_GREEN)
     curses.init_pair(COLOR_HEADER, curses.COLOR_CYAN, -1)
     curses.init_pair(COLOR_STATUS, curses.COLOR_YELLOW, -1)
+    curses.init_pair(COLOR_PANEL, curses.COLOR_WHITE, -1)
+    curses.init_pair(COLOR_GRID, curses.COLOR_GREEN, -1)
 
 
 def select_level(stdscr: "curses._CursesWindow") -> int:
@@ -37,16 +54,19 @@ def select_level(stdscr: "curses._CursesWindow") -> int:
     curses.curs_set(0)
     while True:
         stdscr.erase()
-        stdscr.addstr(1, 2, "CLI OTHELLO", curses.color_pair(COLOR_HEADER) | curses.A_BOLD)
-        stdscr.addstr(3, 2, "対戦するAIの強さを選んでください", curses.color_pair(COLOR_HEADER))
+        stdscr.addstr(1, 2, "♟ CLI OTHELLO", curses.color_pair(COLOR_HEADER) | curses.A_BOLD)
+        stdscr.addstr(3, 2, "対戦するAIの強さを選んでください", curses.A_BOLD)
         for i in range(MIN_LEVEL, MAX_LEVEL + 1):
             label = LEVEL_LABELS[i]
-            attr = curses.A_REVERSE | curses.A_BOLD if i == level else curses.A_NORMAL
-            stdscr.addstr(5 + i, 4, f"{label}", attr)
+            if i == level:
+                stdscr.addstr(5 + i, 2, "> ", curses.A_BOLD)
+                stdscr.addstr(5 + i, 4, label, curses.A_REVERSE | curses.A_BOLD)
+            else:
+                stdscr.addstr(5 + i, 4, label, curses.A_NORMAL)
         stdscr.addstr(
             5 + MAX_LEVEL + 2,
             2,
-            "↑/↓ で選択、Enter で決定、q で終了",
+            "↑/↓ で選択   Enter で決定   q で終了",
             curses.color_pair(COLOR_STATUS),
         )
         stdscr.refresh()
@@ -62,6 +82,30 @@ def select_level(stdscr: "curses._CursesWindow") -> int:
             raise SystemExit(0)
 
 
+def _cell_fill_attr(cell: int, is_cursor: bool) -> int:
+    """Background attribute that fills the whole cell (all CELL_H rows)."""
+    if cell == BLACK:
+        return curses.color_pair(COLOR_CURSOR_BLACK if is_cursor else COLOR_BLACK) | curses.A_BOLD
+    if cell == WHITE:
+        return curses.color_pair(COLOR_CURSOR_WHITE if is_cursor else COLOR_WHITE) | curses.A_BOLD
+    if is_cursor:
+        return curses.color_pair(COLOR_CURSOR_EMPTY) | curses.A_BOLD
+    return curses.color_pair(COLOR_BOARD)
+
+
+def _cell_center_attr(cell: int, is_cursor: bool, is_hint: bool) -> tuple[int, str]:
+    """Return (attribute, character) for the center row of a cell."""
+    fill = _cell_fill_attr(cell, is_cursor)
+    if cell == BLACK:
+        return fill, DISC_BLACK
+    if cell == WHITE:
+        return fill, DISC_WHITE
+    if is_hint:
+        attr = curses.color_pair(COLOR_CURSOR_EMPTY if is_cursor else COLOR_HINT) | curses.A_BOLD
+        return attr, HINT_MARK
+    return fill, " "
+
+
 def _draw_board(
     stdscr: "curses._CursesWindow",
     board: Board,
@@ -73,55 +117,70 @@ def _draw_board(
     top: int = 0,
 ) -> None:
     stdscr.erase()
-    stdscr.addstr(top, 2, "CLI OTHELLO", curses.color_pair(COLOR_HEADER) | curses.A_BOLD)
+    stdscr.addstr(top, 2, "♟ CLI OTHELLO", curses.color_pair(COLOR_HEADER) | curses.A_BOLD)
     stdscr.addstr(
-        top,
-        16,
-        f"AI: {LEVEL_LABELS[ai_level]}  あなた: {DISC_CHARS[human_player]}{PLAYER_NAMES[human_player]}",
-        curses.color_pair(COLOR_STATUS),
+        top + 1,
+        2,
+        f"AI: {LEVEL_LABELS[ai_level]}    あなた: {DISC_BLACK if human_player == BLACK else DISC_WHITE} {PLAYER_NAMES[human_player]}",
+        curses.color_pair(COLOR_PANEL),
     )
 
-    board_top = top + 2
+    board_top = top + 3
     board_left = 4
+    grid_attr = curses.color_pair(COLOR_GRID)
 
-    stdscr.addstr(board_top, board_left + 2, "  ".join("ABCDEFGH"))
+    # Column labels (A-H), centered above each cell.
+    header = " " * 3
+    for col in range(SIZE):
+        header += "ABCDEFGH"[col].center(CELL_W)
+    stdscr.addstr(board_top, board_left, header, curses.A_BOLD)
+
+    board_width = 3 + SIZE * CELL_W
     for row in range(SIZE):
-        stdscr.addstr(board_top + 1 + row, board_left, f"{row + 1} ")
-        for col in range(SIZE):
-            cell = board.get(row, col)
-            char = DISC_CHARS[cell]
-            x = board_left + 2 + col * 3
-            y = board_top + 1 + row
-
-            if (row, col) == cursor:
-                attr = curses.color_pair(COLOR_CURSOR) | curses.A_BOLD
-            elif cell == BLACK:
-                attr = curses.color_pair(COLOR_BLACK) | curses.A_BOLD
-            elif cell == WHITE:
-                attr = curses.color_pair(COLOR_WHITE) | curses.A_BOLD
+        for line in range(CELL_H):
+            y = board_top + 1 + row * CELL_H + line
+            if line == CELL_H // 2:
+                row_label = f"{row + 1:>2} "
             else:
-                attr = curses.color_pair(COLOR_BOARD)
+                row_label = "   "
+            stdscr.addstr(y, board_left, row_label, curses.A_BOLD)
+            for col in range(SIZE):
+                cell = board.get(row, col)
+                is_cursor = (row, col) == cursor
+                is_hint = cell == EMPTY and (row, col) in legal
+                x = board_left + 3 + col * CELL_W
 
-            display = char
-            if cell == EMPTY and (row, col) in legal:
-                display = "·"
-                if (row, col) != cursor:
-                    attr = curses.color_pair(COLOR_HINT)
+                if line == CELL_H // 2:
+                    attr, ch = _cell_center_attr(cell, is_cursor, is_hint)
+                    text = ch.center(CELL_W)
+                else:
+                    attr = _cell_fill_attr(cell, is_cursor)
+                    text = " " * CELL_W
+                stdscr.addstr(y, x, text, attr)
 
-            stdscr.addstr(y, x, f" {display} ", attr)
+    board_bottom = board_top + 1 + SIZE * CELL_H
+    panel_left = board_left
+    panel_width = board_width
 
-    score_y = board_top + SIZE + 2
+    you_mark = DISC_BLACK if human_player == BLACK else DISC_WHITE
+    ai_mark = DISC_BLACK if human_player == WHITE else DISC_WHITE
+
+    stdscr.addstr(board_bottom + 1, panel_left, "─" * panel_width, grid_attr)
     stdscr.addstr(
-        score_y,
-        board_left,
-        f"● 黒: {board.count(BLACK)}    ○ 白: {board.count(WHITE)}",
+        board_bottom + 2,
+        panel_left,
+        f"{DISC_BLACK} 黒 {board.count(BLACK):>2}   {DISC_WHITE} 白 {board.count(WHITE):>2}"
+        f"    あなた:{you_mark}  AI:{ai_mark}",
         curses.A_BOLD,
     )
-    stdscr.addstr(score_y + 2, board_left, message, curses.color_pair(COLOR_STATUS))
+    stdscr.addstr(board_bottom + 3, panel_left, "─" * panel_width, grid_attr)
     stdscr.addstr(
-        score_y + 3,
-        board_left,
-        "矢印キー: 移動  Enter/Space: 着手  q: 終了",
+        board_bottom + 4, panel_left, message, curses.color_pair(COLOR_STATUS) | curses.A_BOLD
+    )
+    stdscr.addstr(
+        board_bottom + 5,
+        panel_left,
+        "矢印キー/hjkl: 移動   Enter/Space: 着手   q: 終了",
         curses.color_pair(COLOR_STATUS),
     )
     stdscr.refresh()
