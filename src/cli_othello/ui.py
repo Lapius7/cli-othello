@@ -52,8 +52,14 @@ def select_level(stdscr: "curses._CursesWindow") -> int:
     """Let the user pick an AI difficulty level (1-5) with arrow keys."""
     level = 3
     curses.curs_set(0)
+    required_rows = 5 + MAX_LEVEL + 3
+    required_cols = 36
     while True:
         stdscr.erase()
+        max_y, max_x = stdscr.getmaxyx()
+        if max_y < required_rows or max_x < required_cols:
+            _draw_too_small(stdscr)
+            continue
         stdscr.addstr(1, 2, "♟ CLI OTHELLO", curses.color_pair(COLOR_HEADER) | curses.A_BOLD)
         stdscr.addstr(3, 2, "対戦するAIの強さを選んでください", curses.A_BOLD)
         for i in range(MIN_LEVEL, MAX_LEVEL + 1):
@@ -106,6 +112,28 @@ def _cell_center_attr(cell: int, is_cursor: bool, is_hint: bool) -> tuple[int, s
     return fill, " "
 
 
+def _required_size() -> tuple[int, int]:
+    """Return (rows, cols) needed to draw the board and panel, plus a
+    1-line/1-column margin (curses can refuse writes to the very last
+    row/column of the screen)."""
+    rows = 3 + 1 + SIZE * CELL_H + 6 + 1
+    cols = 4 + 3 + SIZE * CELL_W + 1
+    return rows, cols
+
+
+def _draw_too_small(stdscr: "curses._CursesWindow") -> None:
+    rows, cols = _required_size()
+    stdscr.erase()
+    try:
+        stdscr.addstr(0, 0, "ターミナルが小さすぎます。")
+        stdscr.addstr(1, 0, f"必要サイズ: {cols}列 x {rows}行 以上")
+        stdscr.addstr(2, 0, "ウィンドウを大きくしてください。何かキーを押すと終了します。")
+    except curses.error:
+        pass
+    stdscr.refresh()
+    stdscr.getch()
+
+
 def _draw_board(
     stdscr: "curses._CursesWindow",
     board: Board,
@@ -115,7 +143,15 @@ def _draw_board(
     ai_level: int,
     message: str,
     top: int = 0,
-) -> None:
+) -> bool:
+    """Draw the board. Returns False (and shows a hint) if the terminal is
+    too small to fit it."""
+    required_rows, required_cols = _required_size()
+    max_y, max_x = stdscr.getmaxyx()
+    if max_y < required_rows or max_x < required_cols:
+        _draw_too_small(stdscr)
+        return False
+
     stdscr.erase()
     stdscr.addstr(top, 2, "♟ CLI OTHELLO", curses.color_pair(COLOR_HEADER) | curses.A_BOLD)
     stdscr.addstr(
@@ -184,6 +220,7 @@ def _draw_board(
         curses.color_pair(COLOR_STATUS),
     )
     stdscr.refresh()
+    return True
 
 
 def play_game(stdscr: "curses._CursesWindow", human_player: int, ai_level: int) -> None:
@@ -207,7 +244,10 @@ def play_game(stdscr: "curses._CursesWindow", human_player: int, ai_level: int) 
 
         if turn == human_player:
             message = "あなたの番です"
-            _draw_board(stdscr, board, tuple(cursor), legal, human_player, ai_level, message)
+            if not _draw_board(
+                stdscr, board, tuple(cursor), legal, human_player, ai_level, message
+            ):
+                continue
             key = stdscr.getch()
             if key in (curses.KEY_UP, ord("k")):
                 cursor[0] = (cursor[0] - 1) % SIZE
@@ -228,6 +268,9 @@ def play_game(stdscr: "curses._CursesWindow", human_player: int, ai_level: int) 
         else:
             message = "AIが考えています…"
             _draw_board(stdscr, board, tuple(cursor), legal, human_player, ai_level, message)
+            # If the terminal is too small, _draw_too_small() already
+            # blocked on a keypress above; proceed with the AI move
+            # regardless so the game keeps progressing once resized.
             move = ai.choose_move(board)
             if move is not None:
                 board.play(*move, turn)
@@ -240,13 +283,18 @@ def play_game(stdscr: "curses._CursesWindow", human_player: int, ai_level: int) 
         result = "あなたの勝ちです！"
     else:
         result = "AIの勝ちです"
-    _draw_board(stdscr, board, tuple(cursor), set(), human_player, ai_level, result)
-    stdscr.addstr(
-        SIZE + 8,
-        4,
-        "何かキーを押すと終了します",
-        curses.color_pair(COLOR_STATUS),
-    )
+
+    while not _draw_board(
+        stdscr, board, tuple(cursor), set(), human_player, ai_level, result
+    ):
+        pass
+
+    max_y, max_x = stdscr.getmaxyx()
+    footer_y = min(SIZE + 8, max_y - 1)
+    try:
+        stdscr.addstr(footer_y, 4, "何かキーを押すと終了します", curses.color_pair(COLOR_STATUS))
+    except curses.error:
+        pass
     stdscr.refresh()
     stdscr.getch()
 
