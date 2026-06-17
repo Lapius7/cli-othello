@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cli-othello"
+version = "0.1.0"
+description = "Play Othello (Reversi) in your terminal against a 5-level AI"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Lapius7", email = "20071209ryo@gmail.com" }]
+requires-python = ">=3.9"
+dependencies = [
+    "windows-curses; platform_system=='Windows'",
+]
+
+[project.scripts]
+othello = "cli_othello.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Lapius7/cli-othello"
+Repository = "https://github.com/Lapius7/cli-othello"
+
+[tool.setuptools.packages.find]
+where = ["src"]
