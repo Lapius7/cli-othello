@@ -9,14 +9,23 @@ from .board import BLACK, EMPTY, SIZE, WHITE, Board, opponent
 
 PLAYER_NAMES = {BLACK: "黒", WHITE: "白"}
 
-# Each cell is rendered as CELL_W columns x CELL_H rows so it reads as
-# roughly square in a terminal (chars are about twice as tall as wide).
+# Each cell's interior is CELL_W columns x CELL_H rows, not counting the
+# grid lines drawn around it, so it reads as roughly square in a terminal
+# (chars are about twice as tall as wide). All glyphs used inside the grid
+# are plain ASCII: full-width characters (e.g. "●", "○") have ambiguous
+# display width and end up misaligned in many terminals/fonts, so discs
+# are shown as a colored background plus a half-width letter instead.
 CELL_W = 5
 CELL_H = 2
 
-DISC_BLACK = "●"
-DISC_WHITE = "○"
+DISC_BLACK = "@"
+DISC_WHITE = "O"
 HINT_MARK = "+"
+
+# Box-drawing characters for the grid lines between cells.
+_TL, _TR, _BL, _BR = "┌", "┐", "└", "┘"
+_H, _V = "─", "│"
+_T_DOWN, _T_UP, _T_RIGHT, _T_LEFT, _CROSS = "┬", "┴", "├", "┤", "┼"
 
 COLOR_BOARD = 1
 COLOR_BLACK = 2
@@ -60,7 +69,7 @@ def select_level(stdscr: "curses._CursesWindow") -> int:
         if max_y < required_rows or max_x < required_cols:
             _draw_too_small(stdscr)
             continue
-        stdscr.addstr(1, 2, "♟ CLI OTHELLO", curses.color_pair(COLOR_HEADER) | curses.A_BOLD)
+        stdscr.addstr(1, 2, "CLI OTHELLO", curses.color_pair(COLOR_HEADER) | curses.A_BOLD)
         stdscr.addstr(3, 2, "対戦するAIの強さを選んでください", curses.A_BOLD)
         for i in range(MIN_LEVEL, MAX_LEVEL + 1):
             label = LEVEL_LABELS[i]
@@ -116,8 +125,11 @@ def _required_size() -> tuple[int, int]:
     """Return (rows, cols) needed to draw the board and panel, plus a
     1-line/1-column margin (curses can refuse writes to the very last
     row/column of the screen)."""
-    rows = 3 + 1 + SIZE * CELL_H + 6 + 1
-    cols = 4 + 3 + SIZE * CELL_W + 1
+    grid_rows = 1 + SIZE * (CELL_H + 1)
+    grid_cols = 1 + SIZE * (CELL_W + 1)
+    row_label_w = 3
+    rows = 3 + 1 + grid_rows + 6 + 1
+    cols = 4 + row_label_w + grid_cols + 1
     return rows, cols
 
 
@@ -153,7 +165,7 @@ def _draw_board(
         return False
 
     stdscr.erase()
-    stdscr.addstr(top, 2, "♟ CLI OTHELLO", curses.color_pair(COLOR_HEADER) | curses.A_BOLD)
+    stdscr.addstr(top, 2, "CLI OTHELLO", curses.color_pair(COLOR_HEADER) | curses.A_BOLD)
     stdscr.addstr(
         top + 1,
         2,
@@ -164,29 +176,58 @@ def _draw_board(
     board_top = top + 3
     board_left = 4
     grid_attr = curses.color_pair(COLOR_GRID)
+    row_label_w = 3
 
-    # Column labels (A-H), centered above each cell.
-    header = " " * 3
+    # Column labels (A-H), centered above each cell (account for the
+    # leading grid line and the row-label gutter).
+    header = " " * row_label_w + " "
     for col in range(SIZE):
-        header += "ABCDEFGH"[col].center(CELL_W)
+        header += "ABCDEFGH"[col].center(CELL_W) + " "
     stdscr.addstr(board_top, board_left, header, curses.A_BOLD)
 
-    board_width = 3 + SIZE * CELL_W
-    for row in range(SIZE):
-        for line in range(CELL_H):
-            y = board_top + 1 + row * CELL_H + line
-            if line == CELL_H // 2:
-                row_label = f"{row + 1:>2} "
-            else:
-                row_label = "   "
-            stdscr.addstr(y, board_left, row_label, curses.A_BOLD)
-            for col in range(SIZE):
-                cell = board.get(row, col)
-                is_cursor = (row, col) == cursor
-                is_hint = cell == EMPTY and (row, col) in legal
-                x = board_left + 3 + col * CELL_W
+    grid_top = board_top + 1
+    grid_left = board_left + row_label_w
+    grid_cols = 1 + SIZE * (CELL_W + 1)
+    grid_rows = 1 + SIZE * (CELL_H + 1)
+    board_width = row_label_w + grid_cols
 
-                if line == CELL_H // 2:
+    # Draw the grid lines (the lattice of cell borders) first.
+    for r in range(SIZE + 1):
+        y = grid_top + r * (CELL_H + 1)
+        if r == 0:
+            left, mid, right = _TL, _T_DOWN, _TR
+        elif r == SIZE:
+            left, mid, right = _BL, _T_UP, _BR
+        else:
+            left, mid, right = _T_RIGHT, _CROSS, _T_LEFT
+        line = left + (_H * CELL_W + mid) * SIZE
+        line = line[:-1] + right
+        stdscr.addstr(y, grid_left, line, grid_attr)
+        if r < SIZE:
+            for line_offset in range(1, CELL_H + 1):
+                y2 = y + line_offset
+                stdscr.addstr(y2, grid_left, _V, grid_attr)
+                stdscr.addstr(y2, grid_left + grid_cols - 1, _V, grid_attr)
+                for c in range(1, SIZE):
+                    x = grid_left + c * (CELL_W + 1)
+                    stdscr.addstr(y2, x, _V, grid_attr)
+
+    # Row labels (1-8), centered next to each cell.
+    for row in range(SIZE):
+        y = grid_top + 1 + row * (CELL_H + 1) + (CELL_H - 1) // 2
+        stdscr.addstr(y, board_left, f"{row + 1:>2} ", curses.A_BOLD)
+
+    # Fill each cell's interior (background + disc/hint glyph).
+    for row in range(SIZE):
+        cell_top = grid_top + 1 + row * (CELL_H + 1)
+        for col in range(SIZE):
+            cell = board.get(row, col)
+            is_cursor = (row, col) == cursor
+            is_hint = cell == EMPTY and (row, col) in legal
+            x = grid_left + 1 + col * (CELL_W + 1)
+            for line in range(CELL_H):
+                y = cell_top + line
+                if line == (CELL_H - 1) // 2:
                     attr, ch = _cell_center_attr(cell, is_cursor, is_hint)
                     text = ch.center(CELL_W)
                 else:
@@ -194,7 +235,7 @@ def _draw_board(
                     text = " " * CELL_W
                 stdscr.addstr(y, x, text, attr)
 
-    board_bottom = board_top + 1 + SIZE * CELL_H
+    board_bottom = grid_top + grid_rows - 1
     panel_left = board_left
     panel_width = board_width
 

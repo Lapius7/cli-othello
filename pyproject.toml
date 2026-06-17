@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cli-othello"
-version = "1.0.2"
+version = "1.0.3"
 description = "Play Othello (Reversi) in your terminal against a 5-level AI"
 readme = "README.md"
 license = { text = "MIT" }
