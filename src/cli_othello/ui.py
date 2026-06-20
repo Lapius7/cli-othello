@@ -11,16 +11,29 @@ PLAYER_NAMES = {BLACK: "黒", WHITE: "白"}
 
 # Each cell's interior is CELL_W columns x CELL_H rows, not counting the
 # grid lines drawn around it, so it reads as roughly square in a terminal
-# (chars are about twice as tall as wide). All glyphs used inside the grid
-# are plain ASCII: full-width characters (e.g. "●", "○") have ambiguous
-# display width and end up misaligned in many terminals/fonts, so discs
-# are shown as a colored background plus a half-width letter instead.
+# (chars are about twice as tall as wide).
 CELL_W = 5
 CELL_H = 2
 
+# Round glyphs such as "⬤"/"◯" have ambiguous display width: some
+# terminal/font combinations render them as 1 column, others as 2, and
+# this can't be reliably detected from Python (confirmed: wcwidth's
+# reported width didn't match actual rendering in testing). Discs are
+# therefore drawn as a half-width letter on a solid background instead,
+# which always lines up with the surrounding grid.
 DISC_BLACK = "@"
 DISC_WHITE = "O"
+DISC_WIDTH = 1
 HINT_MARK = "+"
+
+
+def _center_display(glyph: str, glyph_width: int, total_width: int) -> str:
+    """Center `glyph` (which occupies `glyph_width` display columns) inside
+    a field of `total_width` columns, using plain spaces for padding."""
+    pad = total_width - glyph_width
+    left = pad // 2
+    right = pad - left
+    return " " * left + glyph + " " * right
 
 # Box-drawing characters for the grid lines between cells.
 _TL, _TR, _BL, _BR = "┌", "┐", "└", "┘"
@@ -108,17 +121,18 @@ def _cell_fill_attr(cell: int, is_cursor: bool) -> int:
     return curses.color_pair(COLOR_BOARD)
 
 
-def _cell_center_attr(cell: int, is_cursor: bool, is_hint: bool) -> tuple[int, str]:
-    """Return (attribute, character) for the center row of a cell."""
+def _cell_center_attr(cell: int, is_cursor: bool, is_hint: bool) -> tuple[int, str, int]:
+    """Return (attribute, character, display_width) for the center row of
+    a cell."""
     fill = _cell_fill_attr(cell, is_cursor)
     if cell == BLACK:
-        return fill, DISC_BLACK
+        return fill, DISC_BLACK, DISC_WIDTH
     if cell == WHITE:
-        return fill, DISC_WHITE
+        return fill, DISC_WHITE, DISC_WIDTH
     if is_hint:
         attr = curses.color_pair(COLOR_CURSOR_EMPTY if is_cursor else COLOR_HINT) | curses.A_BOLD
-        return attr, HINT_MARK
-    return fill, " "
+        return attr, HINT_MARK, 1
+    return fill, " ", 0
 
 
 def _required_size() -> tuple[int, int]:
@@ -228,8 +242,8 @@ def _draw_board(
             for line in range(CELL_H):
                 y = cell_top + line
                 if line == (CELL_H - 1) // 2:
-                    attr, ch = _cell_center_attr(cell, is_cursor, is_hint)
-                    text = ch.center(CELL_W)
+                    attr, ch, width = _cell_center_attr(cell, is_cursor, is_hint)
+                    text = _center_display(ch, width, CELL_W)
                 else:
                     attr = _cell_fill_attr(cell, is_cursor)
                     text = " " * CELL_W
