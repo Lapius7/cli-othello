@@ -1,0 +1,28 @@
+{
+  "name": "@lapius/cli-othello",
+  "version": "0.0.0",
+  "description": "ターミナルで遊ぶオセロ。5 段階の AI と対戦できる（要 Python 3.9+）",
+  "keywords": [
+    "cli",
+    "othello",
+    "reversi",
+    "game",
+    "terminal"
+  ],
+  "homepage": "https://github.com/Lapius7/cli-othello",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Lapius7/cli-othello.git"
+  },
+  "license": "MIT",
+  "bin": {
+    "othello": "bin/othello"
+  },
+  "files": [
+    "bin/othello",
+    "lib"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}
