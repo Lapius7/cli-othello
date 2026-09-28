@@ -5,9 +5,21 @@
 
 ## インストール
 
+### npm（推奨）
+
+```bash
+npm i -g @lapius/cli-othello
+```
+
+`othello` コマンドが入ります（Node.js 18 以上と Python 3.9 以上が必要）。
+
+### pip
+
 ```bash
 pip install cli-othello
 ```
+
+Windows では curses を使うために `windows-curses` が必要です。pip で入れた場合は自動で入ります。npm で入れた場合は `py -m pip install windows-curses` で入れてください。
 
 ## 使い方
 
@@ -46,8 +58,8 @@ othello --level 3
 
 ## 必要環境
 
-- Python 3.9以上
-- Windowsの場合は `windows-curses` が自動的に依存関係としてインストールされます
+- Python 3.9以上（npm で入れる場合は Node.js 18 以上も）
+- 端末は 57列 x 36行 以上
 
 ## ライセンス
 
