@@ -1,3 +1,3 @@
 """cli-othello: play Othello in your terminal."""
 
-__version__ = "1.0.5"
+__version__ = "1.0.7"
