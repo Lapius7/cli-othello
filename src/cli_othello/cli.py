@@ -21,7 +21,7 @@ def _run(stdscr: "curses._CursesWindow", level: int | None) -> None:
 def _lapius_footer() -> str:
     """--help / --version の最後に出す作者表示と lapacks の案内"""
     tip = ("@lapius のツール: lapacks で一覧・インストール・更新" if shutil.which("lapacks")
-           else "@lapius のツール: npm i -g @lapius/lapacks で一覧・インストール・更新を管理")
+           else "@lapius のツール: pnpm add -g @lapius/lapacks で一覧・インストール・更新を管理")
     return f"作者: Lapius (https://github.com/Lapius7)\n{tip}"
 
 
